@@ -1539,66 +1539,73 @@ def show_user_management():
 # ============================================
 # SHIFT MANAGEMENT
 # ============================================
-def show_shift_management():
-    st.header("🕒 Shift Management")
-    user = st.session_state.user
-    shift_mgr = ShiftManager()
+def show_user_management():
+    st.header("👥 User Management")
+    um = UserManager()
+    users = um.get_all_users(include_inactive=True)
 
-    shifts = ['Morning', 'Evening', 'Night']
-    if user['role'] in ['Morning User', 'Evening User', 'Night User']:
-        shifts = [user['shift']]
-
-    selected = st.selectbox("Select Shift", shifts)
-
-    current = shift_mgr.get_current_shift(selected)
-    if current:
-        st.info(f"**{selected} shift is OPEN**")
-        st.write(f"Opened: {current['opening_date']} {current['opening_time']}")
-        st.write(f"Opening Cash: PKR {current['opening_cash']:,.2f}")
-
-        summary = shift_mgr.get_shift_summary(current['id'])
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Sales", f"PKR {summary['sales']:,.2f}")
-        with col2:
-            st.metric("Expenses", f"PKR {summary['expenses']:,.2f}")
-        with col3:
-            st.metric("Payments", f"PKR {summary['vendor_payments']:,.2f}")
-
-        with st.form("close_shift"):
-            closing = st.number_input("Closing Cash (PKR)", min_value=0.0, step=100.0, format="%.2f")
-            if st.form_submit_button("Close Shift", use_container_width=True):
-                if closing <= 0:
-                    st.error("Enter closing cash.")
+    with st.expander("➕ Add New User", expanded=False):
+        with st.form("add_user_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                username = st.text_input("Username*")
+                password = st.text_input("Password*", type="password")
+                full_name = st.text_input("Full Name*")
+            with col2:
+                role = st.selectbox("Role*", ['Morning User', 'Evening User', 'Night User', 'Accountant', 'Owner', 'Super User'])
+                shift = st.selectbox("Shift", ['', 'Morning', 'Evening', 'Night'])
+                if shift == '':
+                    shift = None
+            submitted = st.form_submit_button("Create User", use_container_width=True)
+            if submitted:
+                if not username or not password or not full_name:
+                    st.error("Please fill all required fields.")
                 else:
-                    success, msg, _ = shift_mgr.close_shift(current['id'], closing, user['id'])
+                    data = {
+                        'username': username,
+                        'password': password,
+                        'full_name': full_name,
+                        'role': role,
+                        'shift': shift
+                    }
+                    success, msg = um.create_user(data, st.session_state.user['id'])
                     if success:
                         st.success(msg)
                         st.rerun()
                     else:
                         st.error(msg)
-    else:
-        st.warning(f"No open {selected} shift.")
-        if st.button(f"Open {selected} Shift", use_container_width=True):
-            success, msg, _ = shift_mgr.open_shift(selected, user['id'])
-            if success:
-                st.success(msg)
-                st.rerun()
-            else:
-                st.error(msg)
 
-    st.subheader("Recent Closed Shifts")
-    shifts_list = shift_mgr.get_shifts_in_date_range(
-        start_date=date.today().replace(day=1),
-        end_date=date.today(),
-        user=user
-    )
-    closed = [s for s in shifts_list if s['shift_name'] == selected and s['status'] == 'closed']
-    if closed:
-        df = pd.DataFrame(closed)
-        st.dataframe(df[['opening_date', 'closing_date', 'opening_cash', 'closing_cash', 'cash_difference']], use_container_width=True, hide_index=True)
+    if users:
+        df = pd.DataFrame(users)
+        st.dataframe(df[['username', 'full_name', 'role', 'shift', 'is_active']], use_container_width=True, hide_index=True)
+
+        with st.form("manage_user"):
+            user_options = {u['username']: u['id'] for u in users}
+            selected = st.selectbox("Select User", list(user_options.keys()))
+            user_id = user_options[selected]
+            selected_user = next(u for u in users if u['id'] == user_id)
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button("Deactivate"):
+                    if selected_user['id'] == st.session_state.user['id']:
+                        st.error("Cannot deactivate yourself.")
+                    else:
+                        success, msg = um.deactivate_user(user_id)
+                        if success:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+                        st.rerun()
+            with col2:
+                if st.form_submit_button("Reactivate"):
+                    success, msg = um.reactivate_user(user_id)
+                    if success:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+                    st.rerun()
     else:
-        st.info("No closed shifts.")
+        st.info("No users found.")
 
 
 # ============================================
